@@ -90,6 +90,48 @@ test("records reusable task time against each selected project and returns all t
   assert.equal(db.prepare("SELECT count(*) AS count FROM time_entries WHERE end_minute IS NULL").get().count, 0);
 });
 
+test("timesheet contains grouped totals and chronological completed and active entries", (t) => {
+  const start = localMinute(9, 0);
+  const { store, setNow } = setup(t, start);
+  const project = store.createProject("Operations");
+  const firstTask = store.createTask("Planning");
+  const secondTask = store.createTask("Review");
+
+  store.timerAction("start", firstTask.id, project.id);
+  setNow(start + 3);
+  store.timerAction("switch", secondTask.id, project.id);
+  setNow(start + 6);
+
+  const report = store.getTimesheet();
+  assert.equal(report.dayKey, trackingDayKey(start));
+  assert.equal(report.byProject[0].name, "Operations");
+  assert.equal(report.byProject[0].minutes, 6);
+  assert.deepEqual(report.byTask.map((row) => row.name), ["Planning", "Review"]);
+  assert.deepEqual(report.byTaskProject.map((row) => row.taskName), ["Planning", "Review"]);
+  assert.deepEqual(report.entries.map((entry) => ({
+    taskName: entry.taskName,
+    startMinute: entry.startMinute,
+    endMinute: entry.endMinute,
+    durationMinutes: entry.durationMinutes,
+    isRunning: entry.isRunning,
+  })), [
+    {
+      taskName: "Planning",
+      startMinute: start,
+      endMinute: start + 3,
+      durationMinutes: 3,
+      isRunning: false,
+    },
+    {
+      taskName: "Review",
+      startMinute: start + 3,
+      endMinute: null,
+      durationMinutes: 3,
+      isRunning: true,
+    },
+  ]);
+});
+
 test("discards entries of one minute or less and keeps longer entries", (t) => {
   const start = localMinute(10, 0);
   const { db, store, setNow } = setup(t, start);

@@ -2,6 +2,7 @@ import express from "express";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { AppError } from "./store.js";
+import { createTimesheetPdf } from "../src/timesheet.js";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -11,6 +12,14 @@ export function createApp(store, { serveClient = false } = {}) {
 
   app.get("/api/bootstrap", (_req, res) => {
     res.json(store.getBootstrap());
+  });
+
+  app.get("/api/timesheet.pdf", async (_req, res) => {
+    const report = store.getTimesheet();
+    const pdf = await createTimesheetPdf(report);
+    res.type("application/pdf");
+    res.attachment(`timesheet-${report.dayKey}.pdf`);
+    res.send(Buffer.from(pdf.output("arraybuffer")));
   });
 
   app.post("/api/projects", (req, res) => {

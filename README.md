@@ -31,6 +31,7 @@ The production server listens on `http://127.0.0.1:3001`.
 - Tasks are independent definitions: every task is available under every project. The app records the many-to-many task/project relationship as soon as a task is tracked with that project.
 - Time entries record their task and selected project when tracking starts. An entry crossing 4:00 AM remains attributed to the tracking day it started in.
 - The database retains earlier entries, but this initial version only displays the current tracking day's totals and does not include history browsing.
+- Use **Generate PDF timesheet** in the daily summary to download today's task totals grouped by project, project totals, task totals across projects, and a chronological list of entries with start/end times and durations. The report includes a currently running entry when it has exceeded one minute.
 
 Run the focused persistence and timer tests with:
 

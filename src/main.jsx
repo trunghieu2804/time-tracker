@@ -449,12 +449,21 @@ function App() {
         </div>
 
         <section className={frameworkClass(isTailwind, "mt-4 mt-lg-5", "tw:mt-8")}>
-          <div className={frameworkClass(isTailwind, "d-flex align-items-end justify-content-between mb-3", "tw:mb-4 tw:flex tw:items-end tw:justify-between")}>
+          <div className={frameworkClass(isTailwind, "d-flex align-items-end justify-content-between gap-3 mb-3", "tw:mb-4 tw:flex tw:flex-wrap tw:items-end tw:justify-between tw:gap-3")}>
             <div>
               <p className={frameworkClass(isTailwind, "text-uppercase text-secondary small fw-semibold mb-1", "tw:mb-1 tw:text-xs tw:font-semibold tw:uppercase tw:tracking-[0.14em] tw:text-slate-500")}>Daily summary</p>
               <h2 className={frameworkClass(isTailwind, "h5 fw-semibold mb-0", "tw:mb-0 tw:text-lg tw:font-semibold tw:text-slate-900")}>Time totals</h2>
             </div>
-            <span className={frameworkClass(isTailwind, "small text-secondary", "tw:text-xs tw:text-slate-500")}>{formatDay(totals.dayKey)}</span>
+            <div className={frameworkClass(isTailwind, "d-flex align-items-center gap-3", "tw:flex tw:flex-wrap tw:items-center tw:gap-3")}>
+              <span className={frameworkClass(isTailwind, "small text-secondary", "tw:text-xs tw:text-slate-500")}>{formatDay(totals.dayKey)}</span>
+              <a
+                href="/api/timesheet.pdf"
+                className={frameworkClass(isTailwind, "btn btn-outline-primary btn-sm", "tw:inline-flex tw:items-center tw:gap-2 tw:rounded-lg tw:border tw:border-slate-300 tw:px-3 tw:py-2 tw:text-sm tw:font-medium tw:text-slate-700 tw:transition tw:hover:border-sky-700 tw:hover:bg-sky-700 tw:hover:text-white tw:disabled:cursor-wait tw:disabled:opacity-60")}
+              >
+                <span aria-hidden="true">↓</span>
+                Generate PDF timesheet
+              </a>
+            </div>
           </div>
           <div className={frameworkClass(isTailwind, "row g-3", "tw:grid tw:grid-cols-1 tw:gap-4 tw:md:grid-cols-3")}>
             <TotalList

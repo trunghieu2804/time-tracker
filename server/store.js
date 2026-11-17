@@ -111,10 +111,9 @@ export function createStore(db, { now = minuteNow } = {}) {
     `).run(taskId, projectId, startMinute);
   }
 
-  function getTotals(dayKey = trackingDayKey(now())) {
+  function getDayEntries(dayKey) {
     const { startMinute, endMinute } = trackingDayWindow(dayKey);
-    const currentMinute = now();
-    const entries = db.prepare(`
+    return db.prepare(`
       SELECT e.task_id AS taskId, t.name AS taskName,
              e.project_id AS projectId, p.name AS projectName,
              e.start_minute AS startMinute, e.end_minute AS endMinute
@@ -122,8 +121,11 @@ export function createStore(db, { now = minuteNow } = {}) {
       JOIN tasks t ON t.id = e.task_id
       JOIN projects p ON p.id = e.project_id
       WHERE e.start_minute >= ? AND e.start_minute < ?
+      ORDER BY e.start_minute, e.id
     `).all(startMinute, endMinute);
+  }
 
+  function summarizeEntries(dayKey, currentMinute, entries) {
     const byTask = new Map();
     const byProject = new Map();
     const byTaskProject = new Map();
@@ -167,6 +169,36 @@ export function createStore(db, { now = minuteNow } = {}) {
       byTaskProject: toList(byTaskProject, (a, b) =>
         a.projectName.localeCompare(b.projectName) ||
         a.taskName.localeCompare(b.taskName)),
+    };
+  }
+
+  function getTotals(dayKey = trackingDayKey(now())) {
+    const currentMinute = now();
+    return summarizeEntries(dayKey, currentMinute, getDayEntries(dayKey));
+  }
+
+  function getTimesheet() {
+    const currentMinute = now();
+    const dayKey = trackingDayKey(currentMinute);
+    const timerStatus = getTimerState.get().status;
+    const entries = getDayEntries(dayKey)
+      .map((entry) => {
+        const durationMinutes = Math.max(
+          0,
+          (entry.endMinute ?? currentMinute) - entry.startMinute,
+        );
+        return {
+          ...entry,
+          durationMinutes,
+          isRunning: entry.endMinute === null && timerStatus === "running",
+        };
+      })
+      .filter((entry) => entry.durationMinutes > 1);
+    const totals = summarizeEntries(dayKey, currentMinute, entries);
+
+    return {
+      ...totals,
+      entries: entries.map(({ endMinute, ...entry }) => ({ ...entry, endMinute })),
     };
   }
 
@@ -298,6 +330,7 @@ export function createStore(db, { now = minuteNow } = {}) {
       };
     },
     getTotals,
+    getTimesheet,
     createProject(nameValue) {
       return createProjectTransaction(validateName(nameValue, "Project"));
     },
