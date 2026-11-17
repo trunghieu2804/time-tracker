@@ -54,15 +54,6 @@ export function createStore(db, { now = minuteNow } = {}) {
     }
   }
 
-  function ensureTaskProject(taskId, projectId) {
-    const association = db.prepare(`
-      SELECT 1 FROM task_projects WHERE task_id = ? AND project_id = ?
-    `).get(taskId, projectId);
-    if (!association) {
-      throw new AppError("The task is not associated with the selected project.");
-    }
-  }
-
   function getTimer() {
     const state = getTimerState.get();
     if (state.status !== "running") {
@@ -81,7 +72,8 @@ export function createStore(db, { now = minuteNow } = {}) {
 
   function closeOpenEntry(endMinute) {
     const entry = db.prepare(`
-      SELECT id, start_minute AS startMinute
+      SELECT id, task_id AS taskId, project_id AS projectId,
+             start_minute AS startMinute
       FROM time_entries WHERE end_minute IS NULL
     `).get();
     if (!entry) {
@@ -91,6 +83,14 @@ export function createStore(db, { now = minuteNow } = {}) {
     const duration = Math.max(0, endMinute - entry.startMinute);
     if (duration <= 1) {
       db.prepare("DELETE FROM time_entries WHERE id = ?").run(entry.id);
+      db.prepare(`
+        DELETE FROM task_projects
+        WHERE task_id = ? AND project_id = ?
+          AND NOT EXISTS (
+            SELECT 1 FROM time_entries
+            WHERE task_id = ? AND project_id = ?
+          )
+      `).run(entry.taskId, entry.projectId, entry.taskId, entry.projectId);
       return 0;
     } else {
       db.prepare("UPDATE time_entries SET end_minute = ? WHERE id = ?")
@@ -102,7 +102,9 @@ export function createStore(db, { now = minuteNow } = {}) {
   function openEntry(taskId, projectId, startMinute) {
     ensureTask(taskId);
     ensureProject(projectId);
-    ensureTaskProject(taskId, projectId);
+    db.prepare(`
+      INSERT OR IGNORE INTO task_projects (task_id, project_id) VALUES (?, ?)
+    `).run(taskId, projectId);
     db.prepare(`
       INSERT INTO time_entries (task_id, project_id, start_minute)
       VALUES (?, ?, ?)
@@ -184,65 +186,26 @@ export function createStore(db, { now = minuteNow } = {}) {
       throw new AppError("The No Project project cannot be deleted.", 409);
     }
 
-    const inUse = db.prepare(`
-      SELECT 1 FROM task_projects WHERE project_id = ?
-      UNION ALL
-      SELECT 1 FROM time_entries WHERE project_id = ?
-      LIMIT 1
-    `).get(projectId, projectId);
-    if (inUse) {
-      throw new AppError("Remove this project from its tasks before deleting it.", 409);
+    const timer = getTimerState.get();
+    const hasEntries = db.prepare(`
+      SELECT 1 FROM time_entries WHERE project_id = ? LIMIT 1
+    `).get(projectId);
+    if (hasEntries || timer.projectId === projectId) {
+      throw new AppError("A project with tracked time or a paused timer cannot be deleted.", 409);
     }
+    db.prepare("DELETE FROM task_projects WHERE project_id = ?").run(projectId);
     db.prepare("DELETE FROM projects WHERE id = ?").run(projectId);
   });
 
-  const createTaskTransaction = db.transaction((name, projectIds) => {
+  const createTaskTransaction = db.transaction((name) => {
     const result = db.prepare("INSERT INTO tasks (name) VALUES (?)").run(name);
-    const taskId = Number(result.lastInsertRowid);
-    const addProject = db.prepare(`
-      INSERT INTO task_projects (task_id, project_id) VALUES (?, ?)
-    `);
-    for (const projectId of projectIds) {
-      ensureProject(projectId);
-      addProject.run(taskId, projectId);
-    }
-    return { id: taskId, name, projectIds };
+    return { id: Number(result.lastInsertRowid), name };
   });
 
-  const updateTaskTransaction = db.transaction((taskId, name, projectIds) => {
+  const updateTaskTransaction = db.transaction((taskId, name) => {
     ensureTask(taskId);
-    const oldProjectIds = db.prepare(`
-      SELECT project_id AS projectId FROM task_projects WHERE task_id = ?
-    `).all(taskId).map((row) => row.projectId);
-    const nextProjectIds = [...new Set(projectIds)];
-    if (nextProjectIds.length === 0) {
-      throw new AppError("A task must be associated with at least one project.");
-    }
-    for (const projectId of nextProjectIds) {
-      ensureProject(projectId);
-    }
-
-    const removedProjectIds = oldProjectIds.filter((id) => !nextProjectIds.includes(id));
-    for (const projectId of removedProjectIds) {
-      const hasEntries = db.prepare(`
-        SELECT 1 FROM time_entries
-        WHERE task_id = ? AND project_id = ? LIMIT 1
-      `).get(taskId, projectId);
-      const timer = getTimerState.get();
-      if (hasEntries || (timer.taskId === taskId && timer.projectId === projectId)) {
-        throw new AppError("A project association with tracked time cannot be removed.", 409);
-      }
-    }
-
     db.prepare("UPDATE tasks SET name = ? WHERE id = ?").run(name, taskId);
-    db.prepare("DELETE FROM task_projects WHERE task_id = ?").run(taskId);
-    const addProject = db.prepare(`
-      INSERT INTO task_projects (task_id, project_id) VALUES (?, ?)
-    `);
-    for (const projectId of nextProjectIds) {
-      addProject.run(taskId, projectId);
-    }
-    return { id: taskId, name, projectIds: nextProjectIds };
+    return { id: taskId, name };
   });
 
   const deleteTaskTransaction = db.transaction((taskId) => {
@@ -297,7 +260,6 @@ export function createStore(db, { now = minuteNow } = {}) {
       if (!Number.isInteger(taskId) || !Number.isInteger(projectId)) {
         throw new AppError("Select a task and project to start tracking.");
       }
-      ensureTaskProject(taskId, projectId);
       if (state.status === "running" &&
           state.taskId === taskId &&
           state.projectId === projectId) {
@@ -324,21 +286,13 @@ export function createStore(db, { now = minuteNow } = {}) {
         ...project,
         isBuiltin: Boolean(project.isBuiltin),
       }));
-      const taskRows = db.prepare(`
-        SELECT t.id, t.name, tp.project_id AS projectId
-        FROM tasks t
-        JOIN task_projects tp ON tp.task_id = t.id
-        ORDER BY t.name COLLATE NOCASE
+      const tasks = db.prepare(`
+        SELECT id, name FROM tasks
+        ORDER BY name COLLATE NOCASE
       `).all();
-      const taskMap = new Map();
-      for (const row of taskRows) {
-        const task = taskMap.get(row.id) ?? { id: row.id, name: row.name, projectIds: [] };
-        task.projectIds.push(row.projectId);
-        taskMap.set(row.id, task);
-      }
       return {
         projects,
-        tasks: [...taskMap.values()],
+        tasks,
         timer: getTimer(),
         totals: getTotals(),
       };
@@ -364,26 +318,11 @@ export function createStore(db, { now = minuteNow } = {}) {
     deleteProject(projectId) {
       deleteProjectTransaction(projectId);
     },
-    createTask(nameValue, projectIdsValue) {
-      const name = validateName(nameValue, "Task");
-      const projectIds = Array.isArray(projectIdsValue) && projectIdsValue.length > 0
-        ? projectIdsValue.map(Number)
-        : [NO_PROJECT_ID];
-      if (projectIds.some((id) => !Number.isInteger(id))) {
-        throw new AppError("Select a valid project.");
-      }
-      return createTaskTransaction(name, [...new Set(projectIds)]);
+    createTask(nameValue) {
+      return createTaskTransaction(validateName(nameValue, "Task"));
     },
-    updateTask(taskId, nameValue, projectIdsValue) {
-      const name = validateName(nameValue, "Task");
-      if (!Array.isArray(projectIdsValue) || projectIdsValue.length === 0) {
-        throw new AppError("A task must be associated with at least one project.");
-      }
-      const projectIds = projectIdsValue.map(Number);
-      if (projectIds.some((id) => !Number.isInteger(id))) {
-        throw new AppError("Select valid projects.");
-      }
-      return updateTaskTransaction(taskId, name, projectIds);
+    updateTask(taskId, nameValue) {
+      return updateTaskTransaction(taskId, validateName(nameValue, "Task"));
     },
     deleteTask(taskId) {
       deleteTaskTransaction(taskId);

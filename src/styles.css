@@ -205,13 +205,8 @@ h1, h2, h3, p { margin-top: 0; }
 .modal input[type="text"], .modal input:not([type]) { width: 100%; height: 40px; border: 1px solid #dfe5e1; border-radius: 8px; outline: 0; padding: 0 11px; color: var(--ink); font-size: 13px; }
 .modal input:focus { border-color: #78b49a; box-shadow: 0 0 0 3px rgba(44,134,100,.1); }
 .character-count { margin-top: 5px; color: #a0aaa5; text-align: right; font-size: 10px; }
-.project-options { border: 0; padding: 0; margin: 18px 0 0; }
-.project-options legend { margin-bottom: 5px; color: #59645f; font-size: 11px; font-weight: 700; }
 .field-help { margin: 0 0 9px; color: #929d98; font-size: 10px; line-height: 1.5; }
-.checkbox-row { min-height: 33px; display: flex; align-items: center; gap: 8px; border-bottom: 1px solid #f0f2f0; color: #56615c; font-size: 12px; }
-.checkbox-row input { accent-color: var(--green); }
-.checkbox-row .built-in-tag { margin-left: auto; }
-.validation-hint { margin: 8px 0 0; color: #b44e43; font-size: 10px; }
+.task-scope-note { margin: 13px 0 0; }
 .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 22px; }
 .loading-screen { min-height: 100vh; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 15px; color: #7d8983; font-size: 13px; }
 .loading-mark { width: 44px; height: 44px; border-radius: 14px; font-size: 20px; }

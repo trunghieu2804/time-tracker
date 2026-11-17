@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 
@@ -36,23 +36,13 @@ function formatDay(dayKey) {
   });
 }
 
-function Modal({ form, projects, onClose, onSubmit }) {
+function Modal({ form, onClose, onSubmit }) {
   const [name, setName] = useState(form.name || "");
-  const [projectIds, setProjectIds] = useState(form.projectIds || []);
   const isTask = form.type === "task";
-  const selectedProjectNames = projectIds
-    .map((id) => projects.find((project) => project.id === id)?.name)
-    .filter(Boolean);
-
-  function toggleProject(projectId) {
-    setProjectIds((current) => current.includes(projectId)
-      ? current.filter((id) => id !== projectId)
-      : [...current, projectId]);
-  }
 
   function submit(event) {
     event.preventDefault();
-    onSubmit({ name, projectIds });
+    onSubmit({ name });
   }
 
   return (
@@ -79,32 +69,10 @@ function Modal({ form, projects, onClose, onSubmit }) {
             required
           />
           <div className="character-count">{name.length}/50</div>
-          {isTask && (
-            <fieldset className="project-options">
-              <legend>Projects for this task</legend>
-              <p className="field-help">Select at least one. New tasks default to the selected project.</p>
-              {projects.map((project) => (
-                <label className="checkbox-row" key={project.id}>
-                  <input
-                    type="checkbox"
-                    checked={projectIds.includes(project.id)}
-                    onChange={() => toggleProject(project.id)}
-                  />
-                  <span>{project.name}</span>
-                  {project.isBuiltin && <span className="built-in-tag">Built in</span>}
-                </label>
-              ))}
-              {projectIds.length === 0 && (
-                <p className="validation-hint">Choose at least one project.</p>
-              )}
-            </fieldset>
-          )}
-          {!isTask && selectedProjectNames.length > 0 && (
-            <p className="field-help">Used by {selectedProjectNames.join(", ")}</p>
-          )}
+          {isTask && <p className="field-help task-scope-note">Available to track under any project.</p>}
           <div className="modal-actions">
             <button className="button button-quiet" type="button" onClick={onClose}>Cancel</button>
-            <button className="button button-primary" type="submit" disabled={!name.trim() || name.length > 50 || (isTask && projectIds.length === 0)}>
+            <button className="button button-primary" type="submit" disabled={!name.trim() || name.length > 50}>
               Save {form.type}
             </button>
           </div>
@@ -167,10 +135,7 @@ function App() {
   const timer = data?.timer;
   const totals = data?.totals;
   const selectedProject = projects.find((project) => project.id === selectedProjectId);
-  const visibleTasks = useMemo(
-    () => tasks.filter((task) => task.projectIds.includes(selectedProjectId)),
-    [tasks, selectedProjectId],
-  );
+  const visibleTasks = tasks;
   const timerTask = tasks.find((task) => task.id === timer?.taskId);
   const timerProject = projects.find((project) => project.id === timer?.projectId);
   const activeElapsed = timer?.status === "running" && timer.startMinute
@@ -201,7 +166,7 @@ function App() {
 
   function selectProject(projectId) {
     setSelectedProjectId(projectId);
-    if (timer?.status === "running" && timerTask?.projectIds?.includes(projectId)) {
+    if (timer?.status === "running" && timer.projectId !== projectId) {
       timerAction("switch", timer.taskId, projectId);
     }
   }
@@ -217,10 +182,7 @@ function App() {
       } else {
         await request(form.id ? `/api/tasks/${form.id}` : "/api/tasks", {
           method: form.id ? "PATCH" : "POST",
-          body: JSON.stringify({
-            name: values.name,
-            projectIds: values.projectIds,
-          }),
+          body: JSON.stringify({ name: values.name }),
         });
       }
       setModal(null);
@@ -295,7 +257,7 @@ function App() {
             </div>
             <div className="project-footnote">
               <span className="info-icon">i</span>
-              <span>New tasks go to <strong>{selectedProject?.name || "No Project"}</strong>.</span>
+              <span>Any task can be tracked under any project.</span>
             </div>
           </aside>
 
@@ -305,10 +267,7 @@ function App() {
                 <p className="eyebrow">Choose what to work on</p>
                 <h1>{selectedProject?.name || "Tasks"}</h1>
               </div>
-              <button className="button button-secondary" onClick={() => setModal({
-                type: "task",
-                projectIds: [selectedProjectId ?? data.projects.find((project) => project.isBuiltin)?.id],
-              })}>
+              <button className="button button-secondary" onClick={() => setModal({ type: "task" })}>
                 <span className="button-plus">+</span> Add task
               </button>
             </div>
@@ -316,11 +275,8 @@ function App() {
               <div className="empty-tasks">
                 <div className="empty-illustration"><span>✓</span></div>
                 <h2>No tasks here yet</h2>
-                <p>Add a task to {selectedProject?.name || "this project"} to get started.</p>
-                <button className="button button-primary" onClick={() => setModal({
-                  type: "task",
-                  projectIds: [selectedProjectId ?? data.projects.find((project) => project.isBuiltin)?.id],
-                })}>Create your first task</button>
+                <p>Define a task once, then track it under any project.</p>
+                <button className="button button-primary" onClick={() => setModal({ type: "task" })}>Create your first task</button>
               </div>
             ) : (
               <div className="task-list">
@@ -340,11 +296,10 @@ function App() {
                         <span className="task-action">{isRunning ? "Tracking" : timer?.status === "running" ? "Switch to task" : "Start task"}</span>
                       </button>
                       <div className="row-actions">
-                        <button className="icon-button tiny" title="Edit task and project assignments" aria-label={`Edit ${task.name}`} onClick={() => setModal({
+                        <button className="icon-button tiny" title="Edit task" aria-label={`Edit ${task.name}`} onClick={() => setModal({
                           type: "task",
                           id: task.id,
                           name: task.name,
-                          projectIds: task.projectIds,
                         })}>···</button>
                         <button className="icon-button tiny danger-hover" title="Delete task" aria-label={`Delete ${task.name}`} onClick={() => deleteEntity("task", task.id, task.name)}>×</button>
                       </div>
@@ -436,7 +391,6 @@ function App() {
       {modal && (
         <Modal
           form={modal}
-          projects={projects}
           onClose={() => setModal(null)}
           onSubmit={saveEntity}
         />

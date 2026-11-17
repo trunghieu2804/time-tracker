@@ -25,14 +25,10 @@ export function createApp(store, { serveClient = false } = {}) {
   });
 
   app.post("/api/tasks", (req, res) => {
-    res.status(201).json(store.createTask(req.body?.name, req.body?.projectIds));
+    res.status(201).json(store.createTask(req.body?.name));
   });
   app.patch("/api/tasks/:id", (req, res) => {
-    res.json(store.updateTask(
-      Number(req.params.id),
-      req.body?.name,
-      req.body?.projectIds,
-    ));
+    res.json(store.updateTask(Number(req.params.id), req.body?.name));
   });
   app.delete("/api/tasks/:id", (req, res) => {
     store.deleteTask(Number(req.params.id));
