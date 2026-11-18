@@ -3,14 +3,14 @@ import { mkdtempSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import Database from "better-sqlite3";
-import test from "node:test";
+import test, { type TestContext } from "node:test";
 import { createDatabase } from "../../server/db.js";
 
 function temporaryDirectory() {
   return mkdtempSync(path.join(os.tmpdir(), "time-tracker-db-"));
 }
 
-test("creates required tables, seeds defaults, and enforces database constraints", (t) => {
+test("creates required tables, seeds defaults, and enforces database constraints", (t: TestContext) => {
   const db = createDatabase();
   t.after(() => db.close());
 
@@ -37,7 +37,7 @@ test("creates required tables, seeds defaults, and enforces database constraints
   );
 });
 
-test("database files preserve projects, tasks, entries, and timer state across reopen", (t) => {
+test("database files preserve projects, tasks, entries, and timer state across reopen", (t: TestContext) => {
   const directory = temporaryDirectory();
   const databasePath = path.join(directory, "persistent.sqlite");
   const first = createDatabase(databasePath);
@@ -56,19 +56,31 @@ test("database files preserve projects, tasks, entries, and timer state across r
     reopened.close();
     rmSync(directory, { recursive: true, force: true });
   });
-  assert.equal(reopened.prepare("SELECT name FROM projects WHERE id = ?").get(project.lastInsertRowid).name, "Work");
-  assert.equal(reopened.prepare("SELECT name FROM tasks WHERE id = ?").get(task.lastInsertRowid).name, "Planning");
+  assert.equal(
+    reopened.prepare<[number], { name: string }>("SELECT name FROM projects WHERE id = ?")
+      .get(Number(project.lastInsertRowid))?.name,
+    "Work",
+  );
+  assert.equal(
+    reopened.prepare<[number], { name: string }>("SELECT name FROM tasks WHERE id = ?")
+      .get(Number(task.lastInsertRowid))?.name,
+    "Planning",
+  );
   assert.deepEqual(
-    reopened.prepare("SELECT start_minute, end_minute FROM time_entries").get(),
+    reopened.prepare<[], { start_minute: number; end_minute: number | null }>(
+      "SELECT start_minute, end_minute FROM time_entries",
+    ).get(),
     { start_minute: 10, end_minute: 25 },
   );
   assert.deepEqual(
-    reopened.prepare("SELECT status, elapsed_minutes FROM timer_state WHERE id = 1").get(),
+    reopened.prepare<[], { status: string; elapsed_minutes: number }>(
+      "SELECT status, elapsed_minutes FROM timer_state WHERE id = 1",
+    ).get(),
     { status: "paused", elapsed_minutes: 15 },
   );
 });
 
-test("allows only one open time entry and rejects deleting referenced records", (t) => {
+test("allows only one open time entry and rejects deleting referenced records", (t: TestContext) => {
   const db = createDatabase();
   t.after(() => db.close());
   const task = db.prepare("INSERT INTO tasks (name) VALUES ('Research')").run();
@@ -92,7 +104,7 @@ test("allows only one open time entry and rejects deleting referenced records", 
   );
 });
 
-test("adds elapsed_minutes when opening a database from the previous schema", (t) => {
+test("adds elapsed_minutes when opening a database from the previous schema", (t: TestContext) => {
   const directory = temporaryDirectory();
   const databasePath = path.join(directory, "legacy.sqlite");
   const legacyDb = new Database(databasePath);
@@ -114,7 +126,9 @@ test("adds elapsed_minutes when opening a database from the previous schema", (t
     rmSync(directory, { recursive: true, force: true });
   });
   assert.deepEqual(
-    migrated.prepare("SELECT status, elapsed_minutes FROM timer_state WHERE id = 1").get(),
+    migrated.prepare<[], { status: string; elapsed_minutes: number }>(
+      "SELECT status, elapsed_minutes FROM timer_state WHERE id = 1",
+    ).get(),
     { status: "idle", elapsed_minutes: 0 },
   );
 });

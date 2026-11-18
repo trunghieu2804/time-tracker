@@ -1,19 +1,52 @@
+import type Database from "better-sqlite3";
 import {
   minuteNow,
   trackingDayKey,
   trackingDayWindow,
 } from "./time.js";
+import type {
+  DailyTotals,
+  TaskProjectTotal,
+  Timesheet,
+  TimesheetEntry,
+  TimerAction,
+  TimerState,
+  TotalRow,
+} from "../shared/types.js";
 
 export class AppError extends Error {
-  constructor(message, status = 400) {
+  readonly status: number;
+
+  constructor(message: string, status = 400) {
     super(message);
+    this.name = "AppError";
     this.status = status;
   }
 }
 
 const NO_PROJECT_ID = 1;
 
-function validateName(value, itemType) {
+interface DayEntry {
+  taskId: number;
+  taskName: string;
+  projectId: number;
+  projectName: string;
+  startMinute: number;
+  endMinute: number | null;
+}
+
+interface OpenTimeEntry {
+  id: number;
+  taskId: number;
+  projectId: number;
+  startMinute: number;
+}
+
+function isTimerAction(action: string): action is TimerAction {
+  return ["start", "switch", "pause", "resume", "end"].includes(action);
+}
+
+function validateName(value: unknown, itemType: string): string {
   if (typeof value !== "string") {
     throw new AppError(`${itemType} name is required.`);
   }
@@ -28,34 +61,52 @@ function validateName(value, itemType) {
   return name;
 }
 
-export function createStore(db, { now = minuteNow } = {}) {
-  const getTimerState = db.prepare(`
+export function createStore(
+  db: Database.Database,
+  { now = minuteNow }: { now?: () => number } = {},
+) {
+  const getTimerState = db.prepare<[], TimerState>(`
     SELECT status, task_id AS taskId, project_id AS projectId,
            elapsed_minutes AS elapsedMinutes
     FROM timer_state WHERE id = 1
   `);
-  const setTimerState = db.prepare(`
+  const setTimerState = db.prepare<[
+    TimerState["status"],
+    number | null,
+    number | null,
+    number,
+  ]>(`
     UPDATE timer_state
     SET status = ?, task_id = ?, project_id = ?, elapsed_minutes = ?
     WHERE id = 1
   `);
 
-  function ensureProject(projectId) {
-    const project = db.prepare("SELECT id FROM projects WHERE id = ?").get(projectId);
+  function readTimerState(): TimerState {
+    const state = getTimerState.get();
+    if (!state) {
+      throw new Error("Timer state is missing.");
+    }
+    return state;
+  }
+
+  function ensureProject(projectId: number): void {
+    const project = db.prepare<[number], { id: number }>("SELECT id FROM projects WHERE id = ?")
+      .get(projectId);
     if (!project) {
       throw new AppError("Project not found.", 404);
     }
   }
 
-  function ensureTask(taskId) {
-    const task = db.prepare("SELECT id FROM tasks WHERE id = ?").get(taskId);
+  function ensureTask(taskId: number): void {
+    const task = db.prepare<[number], { id: number }>("SELECT id FROM tasks WHERE id = ?")
+      .get(taskId);
     if (!task) {
       throw new AppError("Task not found.", 404);
     }
   }
 
-  function getTimer() {
-    const state = getTimerState.get();
+  function getTimer(): TimerState {
+    const state = readTimerState();
     if (state.status !== "running") {
       return state;
     }
@@ -63,19 +114,19 @@ export function createStore(db, { now = minuteNow } = {}) {
     const entry = db.prepare(`
       SELECT id AS entryId, start_minute AS startMinute
       FROM time_entries WHERE end_minute IS NULL
-    `).get();
+    `).get() as Pick<TimerState, "entryId" | "startMinute"> | undefined;
     if (!entry) {
       throw new Error("Running timer has no open time entry.");
     }
     return { ...state, ...entry };
   }
 
-  function closeOpenEntry(endMinute) {
+  function closeOpenEntry(endMinute: number): number {
     const entry = db.prepare(`
       SELECT id, task_id AS taskId, project_id AS projectId,
              start_minute AS startMinute
       FROM time_entries WHERE end_minute IS NULL
-    `).get();
+    `).get() as OpenTimeEntry | undefined;
     if (!entry) {
       throw new Error("Running timer has no open time entry.");
     }
@@ -99,7 +150,7 @@ export function createStore(db, { now = minuteNow } = {}) {
     }
   }
 
-  function openEntry(taskId, projectId, startMinute) {
+  function openEntry(taskId: number, projectId: number, startMinute: number): void {
     ensureTask(taskId);
     ensureProject(projectId);
     db.prepare(`
@@ -111,7 +162,7 @@ export function createStore(db, { now = minuteNow } = {}) {
     `).run(taskId, projectId, startMinute);
   }
 
-  function getDayEntries(dayKey) {
+  function getDayEntries(dayKey: string): DayEntry[] {
     const { startMinute, endMinute } = trackingDayWindow(dayKey);
     return db.prepare(`
       SELECT e.task_id AS taskId, t.name AS taskName,
@@ -122,13 +173,17 @@ export function createStore(db, { now = minuteNow } = {}) {
       JOIN projects p ON p.id = e.project_id
       WHERE e.start_minute >= ? AND e.start_minute < ?
       ORDER BY e.start_minute, e.id
-    `).all(startMinute, endMinute);
+    `).all(startMinute, endMinute) as DayEntry[];
   }
 
-  function summarizeEntries(dayKey, currentMinute, entries) {
-    const byTask = new Map();
-    const byProject = new Map();
-    const byTaskProject = new Map();
+  function summarizeEntries(
+    dayKey: string,
+    currentMinute: number,
+    entries: DayEntry[],
+  ): DailyTotals {
+    const byTask = new Map<number, TotalRow>();
+    const byProject = new Map<number, TotalRow>();
+    const byTaskProject = new Map<string, TaskProjectTotal>();
 
     for (const entry of entries) {
       const end = entry.endMinute ?? currentMinute;
@@ -158,9 +213,9 @@ export function createStore(db, { now = minuteNow } = {}) {
       });
     }
 
-    const toList = (map, compare) =>
+    const toList = <K, T>(map: Map<K, T>, compare: (a: T, b: T) => number) =>
       [...map.values()].sort(compare);
-    const byName = (a, b) => a.name.localeCompare(b.name);
+    const byName = (a: TotalRow, b: TotalRow) => a.name.localeCompare(b.name);
 
     return {
       dayKey,
@@ -172,17 +227,17 @@ export function createStore(db, { now = minuteNow } = {}) {
     };
   }
 
-  function getTotals(dayKey = trackingDayKey(now())) {
+  function getTotals(dayKey = trackingDayKey(now())): DailyTotals {
     const currentMinute = now();
     return summarizeEntries(dayKey, currentMinute, getDayEntries(dayKey));
   }
 
-  function getTimesheet() {
+  function getTimesheet(): Timesheet {
     const currentMinute = now();
     const dayKey = trackingDayKey(currentMinute);
-    const timerStatus = getTimerState.get().status;
+    const timerStatus = readTimerState().status;
     const entries = getDayEntries(dayKey)
-      .map((entry) => {
+      .map((entry): TimesheetEntry => {
         const durationMinutes = Math.max(
           0,
           (entry.endMinute ?? currentMinute) - entry.startMinute,
@@ -202,13 +257,13 @@ export function createStore(db, { now = minuteNow } = {}) {
     };
   }
 
-  const createProjectTransaction = db.transaction((name) => {
+  const createProjectTransaction = db.transaction((name: string) => {
     const result = db.prepare("INSERT INTO projects (name) VALUES (?)").run(name);
     return { id: Number(result.lastInsertRowid), name, isBuiltin: false };
   });
 
-  const deleteProjectTransaction = db.transaction((projectId) => {
-    const project = db.prepare(`
+  const deleteProjectTransaction = db.transaction((projectId: number) => {
+    const project = db.prepare<[number], { id: number; isBuiltin: number }>(`
       SELECT id, is_builtin AS isBuiltin FROM projects WHERE id = ?
     `).get(projectId);
     if (!project) {
@@ -218,8 +273,8 @@ export function createStore(db, { now = minuteNow } = {}) {
       throw new AppError("The No Project project cannot be deleted.", 409);
     }
 
-    const timer = getTimerState.get();
-    const hasEntries = db.prepare(`
+    const timer = readTimerState();
+    const hasEntries = db.prepare<[number], object>(`
       SELECT 1 FROM time_entries WHERE project_id = ? LIMIT 1
     `).get(projectId);
     if (hasEntries || timer.projectId === projectId) {
@@ -229,23 +284,23 @@ export function createStore(db, { now = minuteNow } = {}) {
     db.prepare("DELETE FROM projects WHERE id = ?").run(projectId);
   });
 
-  const createTaskTransaction = db.transaction((name) => {
+  const createTaskTransaction = db.transaction((name: string) => {
     const result = db.prepare("INSERT INTO tasks (name) VALUES (?)").run(name);
     return { id: Number(result.lastInsertRowid), name };
   });
 
-  const updateTaskTransaction = db.transaction((taskId, name) => {
+  const updateTaskTransaction = db.transaction((taskId: number, name: string) => {
     ensureTask(taskId);
     db.prepare("UPDATE tasks SET name = ? WHERE id = ?").run(name, taskId);
     return { id: taskId, name };
   });
 
-  const deleteTaskTransaction = db.transaction((taskId) => {
+  const deleteTaskTransaction = db.transaction((taskId: number) => {
     ensureTask(taskId);
-    const hasEntries = db.prepare(`
+    const hasEntries = db.prepare<[number], object>(`
       SELECT 1 FROM time_entries WHERE task_id = ? LIMIT 1
     `).get(taskId);
-    const timer = getTimerState.get();
+    const timer = readTimerState();
     if (hasEntries || timer.taskId === taskId) {
       throw new AppError("A task with tracked time or an active timer cannot be deleted.", 409);
     }
@@ -253,8 +308,12 @@ export function createStore(db, { now = minuteNow } = {}) {
     db.prepare("DELETE FROM tasks WHERE id = ?").run(taskId);
   });
 
-  const timerActionTransaction = db.transaction((action, taskId, projectId) => {
-    const state = getTimerState.get();
+  const timerActionTransaction = db.transaction((
+    action: TimerAction,
+    taskId?: number,
+    projectId?: number,
+  ) => {
+    const state = readTimerState();
     const currentMinute = now();
 
     if (action === "pause") {
@@ -275,6 +334,9 @@ export function createStore(db, { now = minuteNow } = {}) {
       if (state.status !== "paused") {
         throw new AppError("There is no paused timer to resume.", 409);
       }
+      if (state.taskId === null || state.projectId === null) {
+        throw new Error("Paused timer is missing its task or project.");
+      }
       openEntry(state.taskId, state.projectId, currentMinute);
       setTimerState.run("running", state.taskId, state.projectId, state.elapsedMinutes);
       return getTimer();
@@ -289,7 +351,12 @@ export function createStore(db, { now = minuteNow } = {}) {
     }
 
     if (action === "start" || action === "switch") {
-      if (!Number.isInteger(taskId) || !Number.isInteger(projectId)) {
+      if (
+        typeof taskId !== "number" ||
+        typeof projectId !== "number" ||
+        !Number.isInteger(taskId) ||
+        !Number.isInteger(projectId)
+      ) {
         throw new AppError("Select a task and project to start tracking.");
       }
       if (state.status === "running" &&
@@ -311,14 +378,14 @@ export function createStore(db, { now = minuteNow } = {}) {
   return {
     noProjectId: NO_PROJECT_ID,
     getBootstrap() {
-      const projectRows = db.prepare(`
+      const projectRows = db.prepare<[], { id: number; name: string; isBuiltin: number }>(`
         SELECT id, name, is_builtin AS isBuiltin FROM projects ORDER BY is_builtin DESC, name COLLATE NOCASE
       `).all();
       const projects = projectRows.map((project) => ({
         ...project,
         isBuiltin: Boolean(project.isBuiltin),
       }));
-      const tasks = db.prepare(`
+      const tasks = db.prepare<[], { id: number; name: string }>(`
         SELECT id, name FROM tasks
         ORDER BY name COLLATE NOCASE
       `).all();
@@ -331,11 +398,11 @@ export function createStore(db, { now = minuteNow } = {}) {
     },
     getTotals,
     getTimesheet,
-    createProject(nameValue) {
+    createProject(nameValue: unknown) {
       return createProjectTransaction(validateName(nameValue, "Project"));
     },
-    updateProject(projectId, nameValue) {
-      const project = db.prepare(`
+    updateProject(projectId: number, nameValue: unknown) {
+      const project = db.prepare<[number], { isBuiltin: number }>(`
         SELECT is_builtin AS isBuiltin FROM projects WHERE id = ?
       `).get(projectId);
       if (!project) {
@@ -348,22 +415,27 @@ export function createStore(db, { now = minuteNow } = {}) {
       db.prepare("UPDATE projects SET name = ? WHERE id = ?").run(name, projectId);
       return { id: projectId, name };
     },
-    deleteProject(projectId) {
+    deleteProject(projectId: number) {
       deleteProjectTransaction(projectId);
     },
-    createTask(nameValue) {
+    createTask(nameValue: unknown) {
       return createTaskTransaction(validateName(nameValue, "Task"));
     },
-    updateTask(taskId, nameValue) {
+    updateTask(taskId: number, nameValue: unknown) {
       return updateTaskTransaction(taskId, validateName(nameValue, "Task"));
     },
-    deleteTask(taskId) {
+    deleteTask(taskId: number) {
       deleteTaskTransaction(taskId);
     },
-    timerAction(action, taskIdValue, projectIdValue) {
+    timerAction(actionValue: string, taskIdValue?: unknown, projectIdValue?: unknown) {
+      if (!isTimerAction(actionValue)) {
+        throw new AppError("Unknown timer action.");
+      }
       const taskId = taskIdValue === undefined ? undefined : Number(taskIdValue);
       const projectId = projectIdValue === undefined ? undefined : Number(projectIdValue);
-      return timerActionTransaction(action, taskId, projectId);
+      return timerActionTransaction(actionValue, taskId, projectId);
     },
   };
 }
+
+export type TimeTrackerStore = ReturnType<typeof createStore>;

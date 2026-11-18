@@ -6,11 +6,13 @@ test("generates a PDF with all timesheet sections and activity rows", async () =
   const doc = await createTimesheetPdf({
     dayKey: "2026-11-17",
     byTaskProject: [
-      { projectName: "Operations", taskName: "Planning", minutes: 45 },
+      { taskId: 1, projectId: 1, projectName: "Operations", taskName: "Planning", minutes: 45 },
     ],
-    byProject: [{ name: "Operations", minutes: 45 }],
-    byTask: [{ name: "Planning", minutes: 45 }],
+    byProject: [{ id: 1, name: "Operations", minutes: 45 }],
+    byTask: [{ id: 1, name: "Planning", minutes: 45 }],
     entries: [{
+      taskId: 1,
+      projectId: 1,
       startMinute: Math.floor(new Date(2026, 10, 17, 9, 0).getTime() / 60_000),
       endMinute: Math.floor(new Date(2026, 10, 17, 9, 45).getTime() / 60_000),
       durationMinutes: 45,

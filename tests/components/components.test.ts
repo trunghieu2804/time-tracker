@@ -3,46 +3,49 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { JSDOM } from "jsdom";
 import { after, before, test } from "node:test";
+import type * as ReactTypes from "react";
+import type { ModalProps, TotalListProps, TotalRowDataItem } from "../../src/main.js";
+import type { ViteDevServer } from "vite";
 import { createServer } from "vite";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
-let dom;
-let vite;
-let React;
-let createRoot;
-let Modal;
-let TotalList;
-let previousGlobals;
+let dom: JSDOM;
+let vite: ViteDevServer;
+let React: typeof import("react");
+let createRoot: typeof import("react-dom/client").createRoot;
+let Modal: ReactTypes.ComponentType<ModalProps>;
+let TotalList: ReactTypes.ComponentType<TotalListProps<TotalRowDataItem>>;
+let previousGlobals: Record<string, PropertyDescriptor | undefined>;
 
 before(async () => {
   dom = new JSDOM("<!doctype html><html><body></body></html>", {
     url: "http://localhost/",
     pretendToBeVisual: true,
   });
-  previousGlobals = {
-    window: globalThis.window,
-    document: globalThis.document,
-    navigator: Object.getOwnPropertyDescriptor(globalThis, "navigator"),
-    HTMLElement: globalThis.HTMLElement,
-    IS_REACT_ACT_ENVIRONMENT: globalThis.IS_REACT_ACT_ENVIRONMENT,
-  };
-  globalThis.window = dom.window;
-  globalThis.document = dom.window.document;
-  globalThis.HTMLElement = dom.window.HTMLElement;
-  globalThis.IS_REACT_ACT_ENVIRONMENT = true;
-  Object.defineProperty(globalThis, "navigator", {
-    configurable: true,
-    value: dom.window.navigator,
+  const globalNames = ["window", "document", "navigator", "HTMLElement", "IS_REACT_ACT_ENVIRONMENT"];
+  previousGlobals = Object.fromEntries(globalNames.map((name) => [
+    name,
+    Object.getOwnPropertyDescriptor(globalThis, name),
+  ]));
+  Object.defineProperties(globalThis, {
+    window: { configurable: true, value: dom.window },
+    document: { configurable: true, value: dom.window.document },
+    HTMLElement: { configurable: true, value: dom.window.HTMLElement },
+    IS_REACT_ACT_ENVIRONMENT: { configurable: true, value: true },
+    navigator: {
+      configurable: true,
+      value: dom.window.navigator,
+    },
   });
 
   vite = await createServer({
-    configFile: path.join(projectRoot, "vite.config.js"),
+    configFile: path.join(projectRoot, "vite.config.ts"),
     appType: "custom",
     logLevel: "silent",
     server: { middlewareMode: true },
   });
   [{ Modal, TotalList }, React, { createRoot }] = await Promise.all([
-    vite.ssrLoadModule("/src/main.jsx"),
+    vite.ssrLoadModule("/src/main.tsx"),
     import("react"),
     import("react-dom/client"),
   ]);
@@ -51,14 +54,12 @@ before(async () => {
 after(async () => {
   await vite?.close();
   dom?.window.close();
-  globalThis.window = previousGlobals.window;
-  globalThis.document = previousGlobals.document;
-  globalThis.HTMLElement = previousGlobals.HTMLElement;
-  globalThis.IS_REACT_ACT_ENVIRONMENT = previousGlobals.IS_REACT_ACT_ENVIRONMENT;
-  if (previousGlobals.navigator) {
-    Object.defineProperty(globalThis, "navigator", previousGlobals.navigator);
-  } else {
-    delete globalThis.navigator;
+  for (const [name, descriptor] of Object.entries(previousGlobals)) {
+    if (descriptor) {
+      Object.defineProperty(globalThis, name, descriptor);
+    } else {
+      Reflect.deleteProperty(globalThis, name);
+    }
   }
 });
 
@@ -66,24 +67,28 @@ test("modal validates names, submits entered text, and supports backdrop dismiss
   const container = document.createElement("div");
   document.body.append(container);
   const root = createRoot(container);
-  const submitted = [];
+  const submitted: Array<{ name: string }> = [];
   let closeCount = 0;
-  const props = {
+  const props: ModalProps = {
     form: { type: "task" },
     onClose: () => { closeCount += 1; },
-    onSubmit: (values) => submitted.push(values),
+    onSubmit: (values: { name: string }) => { submitted.push(values); },
     isTailwind: false,
   };
 
   try {
     await React.act(async () => root.render(React.createElement(Modal, props)));
-    const input = container.querySelector("#item-name");
-    const saveButton = container.querySelector('button[type="submit"]');
-    const setInputValue = (value) => {
-      Object.getOwnPropertyDescriptor(
+    const input = container.querySelector<HTMLInputElement>("#item-name");
+    const saveButton = container.querySelector<HTMLButtonElement>('button[type="submit"]');
+    assert.ok(input);
+    assert.ok(saveButton);
+    const setInputValue = (value: string) => {
+      const inputValueSetter = Object.getOwnPropertyDescriptor(
         dom.window.HTMLInputElement.prototype,
         "value",
-      ).set.call(input, value);
+      )?.set;
+      assert.ok(inputValueSetter);
+      inputValueSetter.call(input, value);
       input.dispatchEvent(new dom.window.Event("input", { bubbles: true }));
     };
 
@@ -98,14 +103,14 @@ test("modal validates names, submits entered text, and supports backdrop dismiss
     assert.match(container.textContent, /Available to track under any project/);
 
     await React.act(async () => {
-      container.querySelector("form").dispatchEvent(
+      container.querySelector("form")?.dispatchEvent(
         new dom.window.Event("submit", { bubbles: true, cancelable: true }),
       );
     });
     assert.deepEqual(submitted, [{ name: "Planning" }]);
 
     await React.act(async () => {
-      container.firstElementChild.dispatchEvent(
+      container.firstElementChild?.dispatchEvent(
         new dom.window.MouseEvent("mousedown", { bubbles: true }),
       );
     });
@@ -123,7 +128,9 @@ test("totals component shows empty state and formats populated rows", async () =
   const commonProps = {
     className: "",
     title: "By task",
-    getLabel: (row) => row.name,
+    getLabel: (row: TotalRowDataItem) => (
+      "name" in row ? row.name : `${row.projectName} / ${row.taskName}`
+    ),
     emptyText: "No tracked tasks.",
     isTailwind: false,
   };

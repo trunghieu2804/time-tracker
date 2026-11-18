@@ -1,12 +1,17 @@
 import express from "express";
+import type { ErrorRequestHandler } from "express";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { AppError } from "./store.js";
+import type { TimeTrackerStore } from "./store.js";
 import { createTimesheetPdf } from "../src/timesheet.js";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
-export function createApp(store, { serveClient = false } = {}) {
+export function createApp(
+  store: TimeTrackerStore,
+  { serveClient = false }: { serveClient?: boolean } = {},
+) {
   const app = express();
   app.use(express.json({ limit: "32kb" }));
 
@@ -52,26 +57,31 @@ export function createApp(store, { serveClient = false } = {}) {
     ));
   });
 
-  app.use((error, _req, res, _next) => {
-    const clientErrorStatus = Number.isInteger(error.statusCode) &&
-      error.statusCode >= 400 && error.statusCode < 500
-      ? error.statusCode
+  const errorHandler: ErrorRequestHandler = (error, _req, res, _next) => {
+    const details: Error & { statusCode?: unknown; type?: unknown } = error instanceof Error
+      ? error as Error & { statusCode?: unknown; type?: unknown }
+      : new Error("Unknown server error.");
+    const statusCode = details.statusCode;
+    const clientErrorStatus = typeof statusCode === "number" &&
+      Number.isInteger(statusCode) && statusCode >= 400 && statusCode < 500
+      ? statusCode
       : null;
-    const status = error instanceof AppError ? error.status : clientErrorStatus ?? 500;
+    const status = details instanceof AppError ? details.status : clientErrorStatus ?? 500;
     if (status === 500) {
       console.error(error);
     }
     const message = status === 500
       ? "An unexpected server error occurred."
-      : error.type === "entity.parse.failed"
+      : details.type === "entity.parse.failed"
         ? "Request body must contain valid JSON."
-        : error.type === "entity.too.large"
+        : details.type === "entity.too.large"
           ? "Request body is too large."
-          : error.message;
+          : details.message;
     res.status(status).json({
       error: message,
     });
-  });
+  };
+  app.use(errorHandler);
 
   if (serveClient) {
     const clientDist = path.join(projectRoot, "dist");

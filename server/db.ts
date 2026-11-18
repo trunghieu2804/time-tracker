@@ -1,6 +1,6 @@
 import Database from "better-sqlite3";
 
-export function createDatabase(databasePath = ":memory:") {
+export function createDatabase(databasePath: string = ":memory:"): Database.Database {
   const db = new Database(databasePath);
   db.pragma("foreign_keys = ON");
   if (databasePath !== ":memory:") {
@@ -47,7 +47,7 @@ export function createDatabase(databasePath = ":memory:") {
     );
   `);
 
-  const timerStateColumns = db.pragma("table_info(timer_state)");
+  const timerStateColumns = db.pragma("table_info(timer_state)") as Array<{ name: string }>;
   if (!timerStateColumns.some((column) => column.name === "elapsed_minutes")) {
     db.exec(`
       ALTER TABLE timer_state

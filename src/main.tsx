@@ -1,10 +1,27 @@
 import React, { useEffect, useState } from "react";
 import { createRoot } from "react-dom/client";
+import type {
+  BootstrapData,
+  DailyTotals,
+  EntityForm,
+  FrameworkPreference,
+  ItemType,
+  TaskProjectTotal,
+  TimerAction,
+  TotalRow as TotalRowData,
+} from "../shared/types.js";
 import "./frameworks.css";
 
 const frameworkPreferenceKey = "time-tracker-framework";
 
-function getInitialFrameworkPreference() {
+function errorMessage(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause);
+}
+
+function getInitialFrameworkPreference(): {
+  framework: FrameworkPreference;
+  error: string;
+} {
   try {
     return {
       framework: window.localStorage.getItem(frameworkPreferenceKey) === "tailwind"
@@ -15,16 +32,20 @@ function getInitialFrameworkPreference() {
   } catch (cause) {
     return {
       framework: "bootstrap",
-      error: `Could not read the saved interface preference: ${cause.message}`,
+      error: `Could not read the saved interface preference: ${errorMessage(cause)}`,
     };
   }
 }
 
-function frameworkClass(isTailwind, bootstrap, tailwind) {
+function frameworkClass(
+  isTailwind: boolean,
+  bootstrap: string,
+  tailwind: string,
+): string {
   return isTailwind ? tailwind : bootstrap;
 }
 
-async function request(path, options = {}) {
+async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const response = await fetch(path, {
     ...options,
     headers: {
@@ -33,23 +54,27 @@ async function request(path, options = {}) {
     },
   });
   if (response.status === 204) {
-    return null;
+    return undefined as T;
   }
-  const body = await response.json();
+  const body: unknown = await response.json();
   if (!response.ok) {
-    throw new Error(body.error || "The request could not be completed.");
+    const message = typeof body === "object" && body !== null &&
+      "error" in body && typeof body.error === "string"
+      ? body.error
+      : "The request could not be completed.";
+    throw new Error(message);
   }
-  return body;
+  return body as T;
 }
 
-function formatDuration(minutes) {
+function formatDuration(minutes: number): string {
   const safeMinutes = Math.max(0, Math.floor(minutes));
   const hours = Math.floor(safeMinutes / 60);
   const remainder = safeMinutes % 60;
   return `${String(hours).padStart(2, "0")}:${String(remainder).padStart(2, "0")}`;
 }
 
-function formatDay(dayKey) {
+function formatDay(dayKey: string): string {
   const [year, month, day] = dayKey.split("-").map(Number);
   return new Date(year, month - 1, day, 12).toLocaleDateString(undefined, {
     weekday: "long",
@@ -58,11 +83,18 @@ function formatDay(dayKey) {
   });
 }
 
-export function Modal({ form, onClose, onSubmit, isTailwind }) {
+export interface ModalProps {
+  form: EntityForm;
+  onClose: () => void;
+  onSubmit: (values: { name: string }) => void;
+  isTailwind: boolean;
+}
+
+export function Modal({ form, onClose, onSubmit, isTailwind }: ModalProps) {
   const [name, setName] = useState(form.name || "");
   const isTask = form.type === "task";
 
-  function submit(event) {
+  function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     onSubmit({ name });
   }
@@ -109,7 +141,25 @@ export function Modal({ form, onClose, onSubmit, isTailwind }) {
   );
 }
 
-export function TotalList({ className, title, rows, getLabel, emptyText, isTailwind }) {
+export type TotalRowDataItem = TotalRowData | TaskProjectTotal;
+
+export interface TotalListProps<T extends TotalRowDataItem = TotalRowDataItem> {
+  className: string;
+  title: string;
+  rows: T[];
+  getLabel: (row: T) => React.ReactNode;
+  emptyText: string;
+  isTailwind: boolean;
+}
+
+export function TotalList<T extends TotalRowDataItem>({
+  className,
+  title,
+  rows,
+  getLabel,
+  emptyText,
+  isTailwind,
+}: TotalListProps<T>) {
   return (
     <div className={className}>
       <section className={frameworkClass(isTailwind, "card h-100 shadow-sm border-0", "tw:h-full tw:overflow-hidden tw:rounded-xl tw:border tw:border-slate-200 tw:bg-white tw:shadow-sm")}>
@@ -122,7 +172,7 @@ export function TotalList({ className, title, rows, getLabel, emptyText, isTailw
         ) : (
           <ul className={frameworkClass(isTailwind, "list-group list-group-flush", "tw:divide-y tw:divide-slate-100")}>
             {rows.map((row, index) => (
-              <li className={frameworkClass(isTailwind, "list-group-item d-flex justify-content-between align-items-center gap-3 py-2", "tw:flex tw:items-center tw:justify-between tw:gap-3 tw:px-4 tw:py-3")} key={`${row.id ?? `${row.taskId}-${row.projectId}`}-${index}`}>
+              <li className={frameworkClass(isTailwind, "list-group-item d-flex justify-content-between align-items-center gap-3 py-2", "tw:flex tw:items-center tw:justify-between tw:gap-3 tw:px-4 tw:py-3")} key={`${"id" in row ? row.id : `${row.taskId}-${row.projectId}`}-${index}`}>
                 <span className={frameworkClass(isTailwind, "text-truncate small", "tw:min-w-0 tw:truncate tw:text-sm tw:text-slate-700")}>{getLabel(row)}</span>
                 <strong className={frameworkClass(isTailwind, "font-monospace small flex-shrink-0", "tw:shrink-0 tw:font-mono tw:text-sm tw:font-semibold tw:text-slate-800")}>{formatDuration(row.minutes)}</strong>
               </li>
@@ -136,28 +186,36 @@ export function TotalList({ className, title, rows, getLabel, emptyText, isTailw
 
 export function App() {
   const [initialPreference] = useState(getInitialFrameworkPreference);
-  const [framework, setFramework] = useState(initialPreference.framework);
-  const [data, setData] = useState(null);
-  const [selectedProjectId, setSelectedProjectId] = useState(null);
-  const [modal, setModal] = useState(null);
+  const [framework, setFramework] = useState<FrameworkPreference>(initialPreference.framework);
+  const [data, setData] = useState<BootstrapData | null>(null);
+  const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
+  const [modal, setModal] = useState<EntityForm | null>(null);
   const [error, setError] = useState(initialPreference.error);
   const [clock, setClock] = useState(() => Date.now());
   const [busy, setBusy] = useState(false);
   const isTailwind = framework === "tailwind";
+  const emptyTotals: DailyTotals = {
+    dayKey: "",
+    byTask: [],
+    byProject: [],
+    byTaskProject: [],
+  };
 
-  function changeFramework(event) {
-    const nextFramework = event.target.value;
+  function changeFramework(event: React.ChangeEvent<HTMLSelectElement>) {
+    const nextFramework: FrameworkPreference = event.target.value === "tailwind"
+      ? "tailwind"
+      : "bootstrap";
     setFramework(nextFramework);
     try {
       window.localStorage.setItem(frameworkPreferenceKey, nextFramework);
       setError("");
     } catch (cause) {
-      setError(`Interface changed, but the preference could not be saved: ${cause.message}`);
+      setError(`Interface changed, but the preference could not be saved: ${errorMessage(cause)}`);
     }
   }
 
-  async function refresh() {
-    const next = await request("/api/bootstrap");
+  async function refresh(): Promise<void> {
+    const next = await request<BootstrapData>("/api/bootstrap");
     setData(next);
     setSelectedProjectId((current) => {
       const currentExists = next.projects.some((project) => project.id === current);
@@ -176,7 +234,7 @@ export function App() {
   const projects = data?.projects ?? [];
   const tasks = data?.tasks ?? [];
   const timer = data?.timer;
-  const totals = data?.totals;
+  const totals = data?.totals ?? emptyTotals;
   const selectedProject = projects.find((project) => project.id === selectedProjectId);
   const visibleTasks = tasks;
   const timerTask = tasks.find((task) => task.id === timer?.taskId);
@@ -185,20 +243,24 @@ export function App() {
     ? timer.elapsedMinutes + Math.max(0, Math.floor(clock / 60_000) - timer.startMinute)
     : timer?.status === "paused" ? timer.elapsedMinutes : 0;
 
-  async function perform(action) {
+  async function perform(action: () => Promise<void>): Promise<void> {
     setBusy(true);
     setError("");
     try {
       await action();
       await refresh();
     } catch (cause) {
-      setError(cause.message);
+      setError(errorMessage(cause));
     } finally {
       setBusy(false);
     }
   }
 
-  function timerAction(action, taskId, projectId) {
+  function timerAction(
+    action: TimerAction,
+    taskId?: number,
+    projectId?: number,
+  ): Promise<void> {
     return perform(async () => {
       await request(`/api/timer/${action}`, {
         method: "POST",
@@ -207,15 +269,18 @@ export function App() {
     });
   }
 
-  function selectProject(projectId) {
+  function selectProject(projectId: number) {
     setSelectedProjectId(projectId);
     if (timer?.status === "running" && timer.projectId !== projectId) {
-      timerAction("switch", timer.taskId, projectId);
+      if (timer.taskId !== null) {
+        timerAction("switch", timer.taskId, projectId);
+      }
     }
   }
 
-  function saveEntity(values) {
+  function saveEntity(values: { name: string }): void {
     const form = modal;
+    if (!form) return;
     perform(async () => {
       if (form.type === "project") {
         await request(form.id ? `/api/projects/${form.id}` : "/api/projects", {
@@ -232,7 +297,7 @@ export function App() {
     });
   }
 
-  function deleteEntity(type, id, name) {
+  function deleteEntity(type: ItemType, id: number, name: string): void {
     if (!window.confirm(`Delete ${type.toLowerCase()} "${name}"?`)) return;
     perform(async () => {
       await request(`/api/${type.toLowerCase()}s/${id}`, { method: "DELETE" });
@@ -249,7 +314,7 @@ export function App() {
       >
         <div className={frameworkClass(isTailwind, "spinner-border text-primary", "tw:size-8 tw:animate-spin tw:rounded-full tw:border-4 tw:border-slate-200 tw:border-t-sky-700")} role="status" aria-label="Loading" />
         <p className={frameworkClass(isTailwind, "text-secondary mb-0", "tw:mb-0 tw:text-sm tw:text-slate-500")}>{error || "Opening your time tracker…"}</p>
-        {error && <button className={frameworkClass(isTailwind, "btn btn-primary", "tw:rounded-lg tw:bg-sky-700 tw:px-4 tw:py-2 tw:text-sm tw:font-semibold tw:text-white tw:hover:bg-sky-800")} onClick={() => refresh().catch((cause) => setError(cause.message))}>Try again</button>}
+        {error && <button className={frameworkClass(isTailwind, "btn btn-primary", "tw:rounded-lg tw:bg-sky-700 tw:px-4 tw:py-2 tw:text-sm tw:font-semibold tw:text-white tw:hover:bg-sky-800")} onClick={() => refresh().catch((cause) => setError(errorMessage(cause)))}>Try again</button>}
       </main>
     );
   }
@@ -373,8 +438,16 @@ export function App() {
                           `tw:group tw:flex tw:items-center tw:gap-2 tw:rounded-xl tw:border tw:px-2 tw:py-2 tw:transition ${isRunning ? "tw:border-sky-200 tw:bg-sky-50" : "tw:border-slate-200 tw:hover:border-slate-300 tw:hover:bg-slate-50"}`)} key={task.id}>
                           <button
                             className={frameworkClass(isTailwind, "btn task-select flex-grow-1 d-flex align-items-center gap-3 text-start border-0 px-2 py-1", "tw:flex tw:min-w-0 tw:flex-1 tw:items-center tw:gap-3 tw:rounded-lg tw:px-2 tw:py-1 tw:text-left tw:transition tw:disabled:cursor-wait tw:disabled:opacity-60")}
-                            disabled={busy}
-                            onClick={() => timerAction(timer?.status === "running" ? "switch" : "start", task.id, selectedProjectId)}
+                            disabled={busy || selectedProjectId === null}
+                            onClick={() => {
+                              if (selectedProjectId !== null) {
+                                timerAction(
+                                  timer?.status === "running" ? "switch" : "start",
+                                  task.id,
+                                  selectedProjectId,
+                                );
+                              }
+                            }}
                           >
                             <span className={frameworkClass(isTailwind,
                               `task-play d-inline-flex align-items-center justify-content-center rounded-2 ${isRunning ? "is-playing" : ""}`,

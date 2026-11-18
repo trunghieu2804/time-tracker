@@ -8,7 +8,13 @@ import {
   trackingDayWindow,
 } from "../../server/time.js";
 
-function localMinute(year, month, day, hour, minute) {
+function localMinute(
+  year: number,
+  month: number,
+  day: number,
+  hour: number,
+  minute: number,
+): number {
   return Math.floor(new Date(year, month - 1, day, hour, minute).getTime() / 60_000);
 }
 

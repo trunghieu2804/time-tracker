@@ -1,15 +1,16 @@
 import assert from "node:assert/strict";
-import test from "node:test";
+import test, { type TestContext } from "node:test";
+import type { BootstrapData } from "../../shared/types.js";
 import { createApp } from "../../server/app.js";
 import { createDatabase } from "../../server/db.js";
 import { createStore } from "../../server/store.js";
 import { closeServer, listen } from "../helpers/server.js";
 
-function localMinute(hour, minute, day = 17) {
+function localMinute(hour: number, minute: number, day = 17): number {
   return Math.floor(new Date(2026, 10, day, hour, minute).getTime() / 60_000);
 }
 
-test("API supports project/task CRUD and the complete timer workflow", async (t) => {
+test("API supports project/task CRUD and the complete timer workflow", async (t: TestContext) => {
   let now = localMinute(9, 0);
   const db = createDatabase();
   const store = createStore(db, { now: () => now });
@@ -19,7 +20,8 @@ test("API supports project/task CRUD and the complete timer workflow", async (t)
     db.close();
   });
 
-  const bootstrap = await fetch(`${url}/api/bootstrap`).then((response) => response.json());
+  const bootstrap = await fetch(`${url}/api/bootstrap`)
+    .then((response) => response.json() as Promise<BootstrapData>);
   assert.equal(bootstrap.projects[0].name, "No Project");
   assert.equal(bootstrap.timer.status, "idle");
 
@@ -78,9 +80,10 @@ test("API supports project/task CRUD and the complete timer workflow", async (t)
   const end = await fetch(`${url}/api/timer/end`, { method: "POST" });
   assert.equal((await end.json()).status, "idle");
 
-  const totals = await fetch(`${url}/api/bootstrap`).then((response) => response.json());
+  const totals = await fetch(`${url}/api/bootstrap`)
+    .then((response) => response.json() as Promise<BootstrapData>);
   assert.equal(totals.totals.byTask[0].minutes, 5);
-  assert.equal(totals.totals.byProject.find((row) => row.name === "Client work").minutes, 5);
+  assert.equal(totals.totals.byProject.find((row) => row.name === "Client work")?.minutes, 5);
   assert.equal(totals.totals.byTaskProject[0].minutes, 5);
 
   const blockedDelete = await fetch(`${url}/api/projects/${project.id}`, { method: "DELETE" });
@@ -99,7 +102,7 @@ test("API supports project/task CRUD and the complete timer workflow", async (t)
   assert.deepEqual(await missingTask.json(), { error: "Task not found." });
 });
 
-test("malformed JSON receives a client error without creating a record", async (t) => {
+test("malformed JSON receives a client error without creating a record", async (t: TestContext) => {
   const db = createDatabase();
   const { server, url } = await listen(createApp(createStore(db)));
   t.after(async () => {
@@ -114,5 +117,8 @@ test("malformed JSON receives a client error without creating a record", async (
   });
   assert.equal(response.status, 400);
   assert.deepEqual(await response.json(), { error: "Request body must contain valid JSON." });
-  assert.equal(db.prepare("SELECT count(*) AS count FROM tasks").get().count, 0);
+  assert.equal(
+    db.prepare<[], { count: number }>("SELECT count(*) AS count FROM tasks").get()?.count,
+    0,
+  );
 });

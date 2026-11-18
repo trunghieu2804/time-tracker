@@ -1,11 +1,14 @@
-function formatDuration(minutes) {
+import type { jsPDF } from "jspdf";
+import type { Timesheet } from "../shared/types.js";
+
+function formatDuration(minutes: number): string {
   const total = Math.max(0, Math.floor(minutes));
   const hours = Math.floor(total / 60);
   const remainingMinutes = total % 60;
   return `${String(hours).padStart(2, "0")}:${String(remainingMinutes).padStart(2, "0")}`;
 }
 
-function formatDateTime(minute) {
+function formatDateTime(minute: number): string {
   return new Date(minute * 60_000).toLocaleString(undefined, {
     month: "short",
     day: "numeric",
@@ -14,7 +17,7 @@ function formatDateTime(minute) {
   });
 }
 
-function formatReportDay(dayKey) {
+function formatReportDay(dayKey: string): string {
   const [year, month, day] = dayKey.split("-").map(Number);
   return new Date(year, month - 1, day, 12).toLocaleDateString(undefined, {
     weekday: "long",
@@ -24,8 +27,8 @@ function formatReportDay(dayKey) {
   });
 }
 
-export async function createTimesheetPdf(report) {
-  const [{ jsPDF }, { default: autoTable }] = await Promise.all([
+export async function createTimesheetPdf(report: Timesheet): Promise<jsPDF> {
+  const [{ jsPDF }, { autoTable }] = await Promise.all([
     import("jspdf"),
     import("jspdf-autotable"),
   ]);
@@ -50,7 +53,12 @@ export async function createTimesheetPdf(report) {
   doc.setTextColor(100, 112, 124);
   doc.text(reportDay, margin, 26);
 
-  const addTable = (heading, head, body, startY) => {
+  const addTable = (
+    heading: string,
+    head: string[],
+    body: string[][],
+    startY: number,
+  ): number => {
     let y = startY;
     if (y > pageHeight - 38) {
       doc.addPage();
@@ -87,7 +95,7 @@ export async function createTimesheetPdf(report) {
       },
     });
 
-    return doc.lastAutoTable.finalY + 10;
+    return (doc as jsPDF & { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 10;
   };
 
   let y = 34;
@@ -127,7 +135,9 @@ export async function createTimesheetPdf(report) {
 
   const chronologicalRows = report.entries.map((entry) => [
     formatDateTime(entry.startMinute),
-    entry.isRunning ? "In progress" : formatDateTime(entry.endMinute),
+    entry.isRunning
+      ? "In progress"
+      : entry.endMinute === null ? "In progress" : formatDateTime(entry.endMinute),
     entry.projectName,
     entry.taskName,
     formatDuration(entry.durationMinutes),

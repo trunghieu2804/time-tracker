@@ -22,11 +22,17 @@ test("timesheet endpoint returns a downloadable PDF attachment", async (t) => {
   });
 
   const address = server.address();
+  if (!address || typeof address === "string") {
+    throw new Error("The test server did not bind to a TCP port.");
+  }
   const response = await fetch(`http://127.0.0.1:${address.port}/api/timesheet.pdf`);
   const pdf = Buffer.from(await response.arrayBuffer());
 
   assert.equal(response.status, 200);
-  assert.match(response.headers.get("content-type"), /application\/pdf/);
-  assert.match(response.headers.get("content-disposition"), /attachment; filename="?timesheet-2026-11-17\.pdf"?/);
+  assert.match(response.headers.get("content-type") ?? "", /application\/pdf/);
+  assert.match(
+    response.headers.get("content-disposition") ?? "",
+    /attachment; filename="?timesheet-2026-11-17\.pdf"?/,
+  );
   assert.equal(pdf.subarray(0, 5).toString(), "%PDF-");
 });

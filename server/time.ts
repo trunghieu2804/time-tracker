@@ -1,8 +1,8 @@
-export function minuteNow() {
+export function minuteNow(): number {
   return Math.floor(Date.now() / 60_000);
 }
 
-export function trackingDayKey(minute) {
+export function trackingDayKey(minute: number): string {
   const date = new Date(minute * 60_000);
   if (date.getHours() < 4) {
     date.setDate(date.getDate() - 1);
@@ -10,11 +10,11 @@ export function trackingDayKey(minute) {
   return formatDate(date);
 }
 
-export function currentTrackingDayKey() {
+export function currentTrackingDayKey(): string {
   return trackingDayKey(minuteNow());
 }
 
-export function trackingDayWindow(dayKey) {
+export function trackingDayWindow(dayKey: string): { startMinute: number; endMinute: number } {
   const [year, month, day] = dayKey.split("-").map(Number);
   const start = new Date(year, month - 1, day, 4, 0, 0, 0);
   const end = new Date(year, month - 1, day + 1, 4, 0, 0, 0);
@@ -24,7 +24,7 @@ export function trackingDayWindow(dayKey) {
   };
 }
 
-export function formatDate(date) {
+export function formatDate(date: Date): string {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");

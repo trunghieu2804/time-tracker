@@ -3,9 +3,10 @@ import { mkdtempSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import test from "node:test";
-import { chromium } from "playwright";
+import test, { type TestContext } from "node:test";
+import { chromium, type Browser } from "playwright";
 import { createServer as createViteServer } from "vite";
+import type { ViteDevServer } from "vite";
 import { createApp } from "../../server/app.js";
 import { createDatabase } from "../../server/db.js";
 import { createStore } from "../../server/store.js";
@@ -13,15 +14,15 @@ import { closeServer, listen } from "../helpers/server.js";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 
-test("browser workflow creates a project and task, tracks time, shows totals, and downloads PDF", async (t) => {
+test("browser workflow creates a project and task, tracks time, shows totals, and downloads PDF", async (t: TestContext) => {
   const dataDirectory = mkdtempSync(path.join(os.tmpdir(), "time-tracker-e2e-"));
   const db = createDatabase(path.join(dataDirectory, "test.sqlite"));
   let now = Math.floor(Date.now() / 60_000);
   const { server: apiServer, url: apiUrl } = await listen(
     createApp(createStore(db, { now: () => now })),
   );
-  let vite;
-  let browser;
+  let vite: ViteDevServer | undefined;
+  let browser: Browser | undefined;
   t.after(async () => {
     await browser?.close();
     await vite?.close();
@@ -31,7 +32,7 @@ test("browser workflow creates a project and task, tracks time, shows totals, an
   });
 
   vite = await createViteServer({
-    configFile: path.join(projectRoot, "vite.config.js"),
+    configFile: path.join(projectRoot, "vite.config.ts"),
     logLevel: "silent",
     server: {
       host: "127.0.0.1",
@@ -40,11 +41,18 @@ test("browser workflow creates a project and task, tracks time, shows totals, an
     },
   });
   await vite.listen();
-  const webAddress = vite.httpServer.address();
+  const httpServer = vite.httpServer;
+  if (!httpServer) {
+    throw new Error("Vite did not create an HTTP server.");
+  }
+  const webAddress = httpServer.address();
+  if (!webAddress || typeof webAddress === "string") {
+    throw new Error("Vite did not bind to a TCP port.");
+  }
   browser = await chromium.launch({ headless: true });
 
   const page = await browser.newPage({ acceptDownloads: true });
-  const pageErrors = [];
+  const pageErrors: string[] = [];
   page.on("pageerror", (error) => pageErrors.push(error.message));
   await page.goto(`http://127.0.0.1:${webAddress.port}`);
   await page.getByRole("heading", { name: "Projects" }).waitFor();

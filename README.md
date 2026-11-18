@@ -95,12 +95,12 @@ If you need remote access, multiple users, or public hosting, this local-only co
 
 ## Technology overview
 
-- **Frontend:** React 19, bundled and served during development by Vite.
+- **Frontend:** React 19 and TypeScript, bundled and served during development by Vite.
 - **Interface styling:** Bootstrap 5 and Tailwind CSS 4.
-- **Backend:** Node.js with an Express JSON API.
+- **Backend:** Node.js with a TypeScript Express JSON API, compiled for production.
 - **Persistence:** SQLite through `better-sqlite3`.
 - **PDF export:** jsPDF with jsPDF-AutoTable.
-- **Tests:** Node's built-in test runner, jsdom for component tests, and Playwright with Chromium for end-to-end testing.
+- **Tests:** Node's built-in test runner, run through `tsx`; jsdom for component tests and Playwright with Chromium for end-to-end testing.
 
 ## Developer guide
 
@@ -116,12 +116,13 @@ Vite serves the frontend and proxies `/api` requests to the local Express server
 ### Build and test
 
 ```powershell
+npm run typecheck
 npm run build
 npx playwright install chromium
 npm test
 ```
 
-Install the Playwright browser once per development environment. The test suite uses in-memory or temporary databases and does not touch the normal tracking database.
+Install the Playwright browser once per development environment. The test suite uses in-memory or temporary databases and does not touch the normal tracking database. `npm run typecheck` checks the TypeScript app, server, and tests. `npm run build` compiles the server to `build/` and bundles the frontend to `dist/`; `npm start` runs the compiled server.
 
 Tests are organized by responsibility:
 
@@ -132,12 +133,15 @@ Tests are organized by responsibility:
 
 ### Code map and extension points
 
-- `server/db.js` defines and initializes the SQLite schema.
-- `server/store.js` contains validation, CRUD operations, timer transitions, and daily totals.
-- `server/time.js` defines minute precision and the local 4:00 AM tracking-day boundary.
-- `server/app.js` maps HTTP routes to store operations and serves the production frontend.
-- `server/index.js` configures the local database directory and starts the server.
-- `src/main.jsx` contains the React application and its interface components; `src/styles.css` and `src/frameworks.css` contain styles.
-- `src/timesheet.js` builds the PDF report.
+- `shared/types.ts` contains the data contracts shared between the browser and server.
+- `server/db.ts` defines and initializes the SQLite schema.
+- `server/store.ts` contains validation, CRUD operations, timer transitions, and daily totals.
+- `server/time.ts` defines minute precision and the local 4:00 AM tracking-day boundary.
+- `server/app.ts` maps HTTP routes to store operations and serves the production frontend.
+- `server/index.ts` configures the local database directory and starts the server.
+- `src/main.tsx` contains the React application and its interface components; `src/styles.css` and `src/frameworks.css` contain styles.
+- `src/timesheet.ts` builds the PDF report.
+- `vite.config.ts` configures the Vite development server and plugins.
+- `tsconfig.json` enables strict type checking; `tsconfig.server.json` configures the production server build.
 
 When extending a feature, keep its behavior consistent across the schema, store, API, and UI. Add or update focused tests in the matching `tests/` area, then run `npm test` and `npm run build`.
