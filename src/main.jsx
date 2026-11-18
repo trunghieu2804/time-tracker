@@ -58,7 +58,7 @@ function formatDay(dayKey) {
   });
 }
 
-function Modal({ form, onClose, onSubmit, isTailwind }) {
+export function Modal({ form, onClose, onSubmit, isTailwind }) {
   const [name, setName] = useState(form.name || "");
   const isTask = form.type === "task";
 
@@ -109,7 +109,7 @@ function Modal({ form, onClose, onSubmit, isTailwind }) {
   );
 }
 
-function TotalList({ className, title, rows, getLabel, emptyText, isTailwind }) {
+export function TotalList({ className, title, rows, getLabel, emptyText, isTailwind }) {
   return (
     <div className={className}>
       <section className={frameworkClass(isTailwind, "card h-100 shadow-sm border-0", "tw:h-full tw:overflow-hidden tw:rounded-xl tw:border tw:border-slate-200 tw:bg-white tw:shadow-sm")}>
@@ -134,7 +134,7 @@ function TotalList({ className, title, rows, getLabel, emptyText, isTailwind }) 
   );
 }
 
-function App() {
+export function App() {
   const [initialPreference] = useState(getInitialFrameworkPreference);
   const [framework, setFramework] = useState(initialPreference.framework);
   const [data, setData] = useState(null);
@@ -507,8 +507,11 @@ function App() {
   );
 }
 
-createRoot(document.getElementById("root")).render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>,
-);
+const rootElement = document.getElementById("root");
+if (rootElement) {
+  createRoot(rootElement).render(
+    <React.StrictMode>
+      <App />
+    </React.StrictMode>,
+  );
+}

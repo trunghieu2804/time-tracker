@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createDatabase } from "../server/db.js";
-import { createStore } from "../server/store.js";
-import { trackingDayKey } from "../server/time.js";
+import { createDatabase } from "../../server/db.js";
+import { createStore } from "../../server/store.js";
+import { trackingDayKey } from "../../server/time.js";
 
 function localMinute(hour, minute, day = 17) {
   return Math.floor(new Date(2026, 10, day, hour, minute, 0, 0).getTime() / 60_000);
@@ -208,4 +208,56 @@ test("blocks deletion of referenced tasks and projects", (t) => {
   assert.throws(() => store.deleteProject(project.id), /tracked time or a paused timer/);
   assert.throws(() => store.deleteTask(task.id), /cannot be deleted/);
   assert.equal(store.updateTask(task.id, "Updated design").name, "Updated design");
+});
+
+test("keeps starting the same running task idempotent and rejects invalid timer transitions", (t) => {
+  const start = localMinute(12, 0);
+  const { db, store, setNow } = setup(t, start);
+  const task = store.createTask("Focus");
+  const project = store.createProject("Studio");
+
+  assert.throws(() => store.timerAction("pause"), /no running timer/);
+  assert.throws(() => store.timerAction("resume"), /no paused timer/);
+  assert.throws(() => store.timerAction("switch", task.id, 999), /Project not found/);
+  assert.throws(() => store.timerAction("start", 999, project.id), /Task not found/);
+  assert.throws(() => store.timerAction("start"), /Select a task and project/);
+
+  store.timerAction("start", task.id, project.id);
+  setNow(start + 4);
+  const timer = store.timerAction("start", task.id, project.id);
+
+  assert.equal(timer.startMinute, start);
+  assert.equal(db.prepare("SELECT count(*) AS count FROM time_entries").get().count, 1);
+  assert.equal(db.prepare("SELECT count(*) AS count FROM time_entries WHERE end_minute IS NULL").get().count, 1);
+  assert.throws(() => store.createTask("  "), /name is required/);
+  assert.throws(() => store.updateProject(project.id, "x".repeat(51)), /50 characters or fewer/);
+});
+
+test("blocks deletion of an item retained by a paused timer", (t) => {
+  const { store, setNow } = setup(t);
+  const project = store.createProject("Client");
+  const task = store.createTask("Review");
+  store.timerAction("start", task.id, project.id);
+  setNow(localMinute(9, 3));
+  store.timerAction("pause");
+
+  assert.throws(() => store.deleteTask(task.id), /cannot be deleted/);
+  assert.throws(() => store.deleteProject(project.id), /paused timer/);
+  assert.equal(store.getBootstrap().timer.status, "paused");
+});
+
+test("includes an active segment in today's totals and excludes completed short segments", (t) => {
+  const start = localMinute(14, 0);
+  const { store, setNow } = setup(t, start);
+  const task = store.createTask("Research");
+
+  store.timerAction("start", task.id, store.noProjectId);
+  setNow(start + 2);
+  assert.equal(store.getTotals(trackingDayKey(start)).byTask[0].minutes, 2);
+  store.timerAction("end");
+
+  setNow(start + 5);
+  store.timerAction("start", task.id, store.noProjectId);
+  store.timerAction("end");
+  assert.equal(store.getTotals(trackingDayKey(start)).byTask[0].minutes, 2);
 });

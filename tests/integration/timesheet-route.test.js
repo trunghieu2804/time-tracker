@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import { once } from "node:events";
 import test from "node:test";
-import { createApp } from "../server/app.js";
-import { createDatabase } from "../server/db.js";
-import { createStore } from "../server/store.js";
+import { createApp } from "../../server/app.js";
+import { createDatabase } from "../../server/db.js";
+import { createStore } from "../../server/store.js";
 
 test("timesheet endpoint returns a downloadable PDF attachment", async (t) => {
   const startMinute = Math.floor(new Date(2026, 10, 17, 9, 0).getTime() / 60_000);

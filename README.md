@@ -33,8 +33,14 @@ The production server listens on `http://127.0.0.1:3001`.
 - The database retains earlier entries, but this initial version only displays the current tracking day's totals and does not include history browsing.
 - Use **Generate PDF timesheet** in the daily summary to download today's task totals grouped by project, project totals, task totals across projects, and a chronological list of entries with start/end times and durations. The report includes a currently running entry when it has exceeded one minute.
 
-Run the focused persistence and timer tests with:
+## Test suite
+
+The test suite includes unit tests for time rules and report generation, database and persistence tests, store/API integration tests, React component tests, and a Chromium end-to-end workflow.
 
 ```powershell
+npm install
+npx playwright install chromium
 npm test
 ```
+
+The browser download is a one-time setup for the end-to-end tests. All tests use in-memory or temporary databases and do not modify the app's local tracking database.

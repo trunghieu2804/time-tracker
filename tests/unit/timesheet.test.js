@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { createTimesheetPdf } from "../src/timesheet.js";
+import { createTimesheetPdf } from "../../src/timesheet.js";
 
 test("generates a PDF with all timesheet sections and activity rows", async () => {
   const doc = await createTimesheetPdf({
@@ -28,4 +28,19 @@ test("generates a PDF with all timesheet sections and activity rows", async () =
   assert.match(pdf, /Chronological activity/);
   assert.match(pdf, /Operations/);
   assert.match(pdf, /Planning/);
+});
+
+test("generates a valid empty-day PDF with a page number", async () => {
+  const doc = await createTimesheetPdf({
+    dayKey: "2026-11-17",
+    byTaskProject: [],
+    byProject: [],
+    byTask: [],
+    entries: [],
+  });
+
+  const pdf = doc.output();
+  assert.ok(pdf.startsWith("%PDF-"));
+  assert.match(pdf, /No tracked time/);
+  assert.match(pdf, /1 \/ 1/);
 });

@@ -53,12 +53,23 @@ export function createApp(store, { serveClient = false } = {}) {
   });
 
   app.use((error, _req, res, _next) => {
-    const status = error instanceof AppError ? error.status : 500;
+    const clientErrorStatus = Number.isInteger(error.statusCode) &&
+      error.statusCode >= 400 && error.statusCode < 500
+      ? error.statusCode
+      : null;
+    const status = error instanceof AppError ? error.status : clientErrorStatus ?? 500;
     if (status === 500) {
       console.error(error);
     }
+    const message = status === 500
+      ? "An unexpected server error occurred."
+      : error.type === "entity.parse.failed"
+        ? "Request body must contain valid JSON."
+        : error.type === "entity.too.large"
+          ? "Request body is too large."
+          : error.message;
     res.status(status).json({
-      error: status === 500 ? "An unexpected server error occurred." : error.message,
+      error: message,
     });
   });
 
