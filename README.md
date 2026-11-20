@@ -10,7 +10,7 @@ Time Tracker is a local web application for keeping a clear record of how you sp
 - Pause, resume, or end a timer. Only one task can run at a time.
 - See today's time by task, by project, and by task/project combination.
 - Download a PDF timesheet with those totals and a chronological list of tracked segments.
-- Choose the Bootstrap 5 or Tailwind 4 interface style. The preference is saved in the browser.
+- Choose the Bootstrap 5 or Tailwind 4 interface style and toggle dark mode. Both preferences are saved in the browser.
 
 ## Use the application
 
