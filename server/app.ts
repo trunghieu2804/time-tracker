@@ -1,16 +1,30 @@
 import express from "express";
+import type { ErrorRequestHandler } from "express";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { AppError } from "./store.js";
+import type { TimeTrackerStore } from "./store.js";
+import { createTimesheetPdf } from "../src/timesheet.js";
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 
-export function createApp(store, { serveClient = false } = {}) {
+export function createApp(
+  store: TimeTrackerStore,
+  { serveClient = false }: { serveClient?: boolean } = {},
+) {
   const app = express();
   app.use(express.json({ limit: "32kb" }));
 
   app.get("/api/bootstrap", (_req, res) => {
     res.json(store.getBootstrap());
+  });
+
+  app.get("/api/timesheet.pdf", async (_req, res) => {
+    const report = store.getTimesheet();
+    const pdf = await createTimesheetPdf(report);
+    res.type("application/pdf");
+    res.attachment(`timesheet-${report.dayKey}.pdf`);
+    res.send(Buffer.from(pdf.output("arraybuffer")));
   });
 
   app.post("/api/projects", (req, res) => {
@@ -43,15 +57,31 @@ export function createApp(store, { serveClient = false } = {}) {
     ));
   });
 
-  app.use((error, _req, res, _next) => {
-    const status = error instanceof AppError ? error.status : 500;
+  const errorHandler: ErrorRequestHandler = (error, _req, res, _next) => {
+    const details: Error & { statusCode?: unknown; type?: unknown } = error instanceof Error
+      ? error as Error & { statusCode?: unknown; type?: unknown }
+      : new Error("Unknown server error.");
+    const statusCode = details.statusCode;
+    const clientErrorStatus = typeof statusCode === "number" &&
+      Number.isInteger(statusCode) && statusCode >= 400 && statusCode < 500
+      ? statusCode
+      : null;
+    const status = details instanceof AppError ? details.status : clientErrorStatus ?? 500;
     if (status === 500) {
       console.error(error);
     }
+    const message = status === 500
+      ? "An unexpected server error occurred."
+      : details.type === "entity.parse.failed"
+        ? "Request body must contain valid JSON."
+        : details.type === "entity.too.large"
+          ? "Request body is too large."
+          : details.message;
     res.status(status).json({
-      error: status === 500 ? "An unexpected server error occurred." : error.message,
+      error: message,
     });
-  });
+  };
+  app.use(errorHandler);
 
   if (serveClient) {
     const clientDist = path.join(projectRoot, "dist");
