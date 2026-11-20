@@ -20,6 +20,91 @@ body {
   background: #f3f5f7;
 }
 
+.app-shell[data-theme="dark"] {
+  color-scheme: dark;
+  --bs-body-color: #e2e8f0;
+  --bs-body-bg: #111827;
+  --bs-border-color: #374151;
+  --bs-secondary-color: #9ca3af;
+  --bs-secondary-bg: #374151;
+  --bs-tertiary-bg: #1f2937;
+  --bs-light-rgb: 31, 41, 55;
+  --app-navy: #f1f5f9;
+  --app-muted: #9ca3af;
+  --color-slate-50: #111827;
+  --color-slate-100: #1f2937;
+  --color-slate-200: #374151;
+  --color-slate-300: #4b5563;
+  --color-slate-400: #9ca3af;
+  --color-slate-500: #9ca3af;
+  --color-slate-600: #cbd5e1;
+  --color-slate-700: #e2e8f0;
+  --color-slate-800: #f1f5f9;
+  --color-slate-900: #f8fafc;
+  --color-sky-50: #102a3a;
+  --color-sky-100: #15394d;
+  --color-sky-200: #23516b;
+  --color-sky-300: #347399;
+  --color-sky-600: #62a9d2;
+  --color-sky-700: #3b82a7;
+  --color-sky-800: #2f6d8f;
+  --color-emerald-100: #064e3b;
+  --color-emerald-800: #a7f3d0;
+  --color-amber-100: #78350f;
+  --color-amber-800: #fde68a;
+  --color-rose-50: #4c0519;
+  --color-rose-100: #881337;
+  --color-rose-200: #9f1239;
+  --color-rose-600: #fda4af;
+  --color-rose-700: #fecdd3;
+  --color-rose-800: #ffe4e6;
+}
+
+.app-shell[data-theme="dark"] .bg-white,
+.app-shell[data-theme="dark"] [class~="tw:bg-white"] {
+  background-color: #1f2937 !important;
+}
+
+.app-shell[data-theme="dark"] .bg-light {
+  background-color: #374151 !important;
+}
+
+.app-shell[data-theme="dark"] .text-dark {
+  color: #f8fafc !important;
+}
+
+.app-shell[data-theme="dark"] .text-secondary {
+  color: #9ca3af !important;
+}
+
+.app-shell[data-theme="dark"] .btn-light {
+  color: #cbd5e1;
+  background-color: #374151;
+}
+
+.app-shell[data-theme="dark"] .active-project,
+.app-shell[data-theme="dark"] .task-play {
+  background-color: #1f2937;
+}
+
+.app-shell[data-theme="dark"] .task-row,
+.app-shell[data-theme="dark"] .task-row:hover {
+  border-color: #374151;
+}
+
+.app-shell[data-theme="dark"] .task-row:hover {
+  background-color: #1f2937;
+}
+
+.app-shell[data-theme="dark"] .task-row.task-running {
+  border-color: #23516b;
+  background-color: #102a3a;
+}
+
+.app-shell[data-theme="dark"] .task-play.is-playing {
+  background-color: #315d7a;
+}
+
 .app-header {
   box-shadow: 0 1px 3px rgba(31, 52, 72, .04);
 }

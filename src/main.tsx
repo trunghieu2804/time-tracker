@@ -13,6 +13,7 @@ import type {
 import "./frameworks.css";
 
 const frameworkPreferenceKey = "time-tracker-framework";
+const darkModePreferenceKey = "time-tracker-dark-mode";
 
 function errorMessage(cause: unknown): string {
   return cause instanceof Error ? cause.message : String(cause);
@@ -33,6 +34,23 @@ function getInitialFrameworkPreference(): {
     return {
       framework: "bootstrap",
       error: `Could not read the saved interface preference: ${errorMessage(cause)}`,
+    };
+  }
+}
+
+function getInitialDarkModePreference(): {
+  enabled: boolean;
+  error: string;
+} {
+  try {
+    return {
+      enabled: window.localStorage.getItem(darkModePreferenceKey) === "true",
+      error: "",
+    };
+  } catch (cause) {
+    return {
+      enabled: false,
+      error: `Could not read the saved dark mode preference: ${errorMessage(cause)}`,
     };
   }
 }
@@ -186,11 +204,13 @@ export function TotalList<T extends TotalRowDataItem>({
 
 export function App() {
   const [initialPreference] = useState(getInitialFrameworkPreference);
+  const [initialDarkModePreference] = useState(getInitialDarkModePreference);
   const [framework, setFramework] = useState<FrameworkPreference>(initialPreference.framework);
+  const [darkMode, setDarkMode] = useState(initialDarkModePreference.enabled);
   const [data, setData] = useState<BootstrapData | null>(null);
   const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
   const [modal, setModal] = useState<EntityForm | null>(null);
-  const [error, setError] = useState(initialPreference.error);
+  const [error, setError] = useState(initialPreference.error || initialDarkModePreference.error);
   const [clock, setClock] = useState(() => Date.now());
   const [busy, setBusy] = useState(false);
   const isTailwind = framework === "tailwind";
@@ -211,6 +231,17 @@ export function App() {
       setError("");
     } catch (cause) {
       setError(`Interface changed, but the preference could not be saved: ${errorMessage(cause)}`);
+    }
+  }
+
+  function changeDarkMode(event: React.ChangeEvent<HTMLInputElement>) {
+    const enabled = event.target.checked;
+    setDarkMode(enabled);
+    try {
+      window.localStorage.setItem(darkModePreferenceKey, String(enabled));
+      setError("");
+    } catch (cause) {
+      setError(`Dark mode changed, but the preference could not be saved: ${errorMessage(cause)}`);
     }
   }
 
@@ -308,6 +339,8 @@ export function App() {
     return (
       <main
         data-framework={framework}
+        data-theme={darkMode ? "dark" : "light"}
+        data-bs-theme={darkMode ? "dark" : "light"}
         className={frameworkClass(isTailwind,
           "container min-vh-100 d-flex flex-column align-items-center justify-content-center gap-3",
           "tw:mx-auto tw:flex tw:min-h-screen tw:max-w-7xl tw:flex-col tw:items-center tw:justify-center tw:gap-3 tw:px-4 tw:text-slate-700")}
@@ -322,6 +355,8 @@ export function App() {
   return (
     <div
       data-framework={framework}
+      data-theme={darkMode ? "dark" : "light"}
+      data-bs-theme={darkMode ? "dark" : "light"}
       className={frameworkClass(isTailwind, "app-shell min-vh-100", "tw:min-h-screen tw:bg-slate-50 tw:text-slate-800")}
     >
       <header className={frameworkClass(isTailwind, "app-header bg-white border-bottom", "tw:border-b tw:border-slate-200 tw:bg-white tw:shadow-sm")}>
@@ -349,6 +384,17 @@ export function App() {
                 <option value="bootstrap">Bootstrap</option>
                 <option value="tailwind">Tailwind 4</option>
               </select>
+            </label>
+            <label className={frameworkClass(isTailwind, "d-flex align-items-center gap-2 small text-secondary", "tw:flex tw:items-center tw:gap-2 tw:text-xs tw:font-medium tw:text-slate-600")} htmlFor="dark-mode">
+              <span>Dark mode</span>
+              <input
+                id="dark-mode"
+                className={frameworkClass(isTailwind, "form-check-input m-0", "tw:size-4 tw:accent-sky-700")}
+                type="checkbox"
+                role="switch"
+                checked={darkMode}
+                onChange={changeDarkMode}
+              />
             </label>
           </div>
         </div>

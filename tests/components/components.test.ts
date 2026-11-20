@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { JSDOM } from "jsdom";
 import { after, before, test } from "node:test";
 import type * as ReactTypes from "react";
-import type { ModalProps, TotalListProps, TotalRowDataItem } from "../../src/main.js";
+import type { App as AppComponent, ModalProps, TotalListProps, TotalRowDataItem } from "../../src/main.js";
 import type { ViteDevServer } from "vite";
 import { createServer } from "vite";
 
@@ -15,6 +15,7 @@ let React: typeof import("react");
 let createRoot: typeof import("react-dom/client").createRoot;
 let Modal: ReactTypes.ComponentType<ModalProps>;
 let TotalList: ReactTypes.ComponentType<TotalListProps<TotalRowDataItem>>;
+let App: typeof AppComponent;
 let previousGlobals: Record<string, PropertyDescriptor | undefined>;
 
 before(async () => {
@@ -44,7 +45,7 @@ before(async () => {
     logLevel: "silent",
     server: { middlewareMode: true },
   });
-  [{ Modal, TotalList }, React, { createRoot }] = await Promise.all([
+  [{ App, Modal, TotalList }, React, { createRoot }] = await Promise.all([
     vite.ssrLoadModule("/src/main.tsx"),
     import("react"),
     import("react-dom/client"),
@@ -60,6 +61,56 @@ after(async () => {
     } else {
       Reflect.deleteProperty(globalThis, name);
     }
+  }
+});
+
+test("dark mode applies immediately and restores the saved choice after remount", async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => new Response(JSON.stringify({
+    projects: [{ id: 1, name: "No Project", isBuiltin: true }],
+    tasks: [],
+    timer: { status: "idle", taskId: null, projectId: null, elapsedMinutes: 0 },
+    totals: { dayKey: "2026-01-01", byTask: [], byProject: [], byTaskProject: [] },
+  }), { status: 200, headers: { "Content-Type": "application/json" } });
+
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  let restoredRoot: ReturnType<typeof createRoot> | undefined;
+
+  try {
+    window.localStorage.clear();
+    await React.act(async () => root.render(React.createElement(App)));
+    const toggle = container.querySelector<HTMLInputElement>("#dark-mode");
+    const appShell = container.querySelector<HTMLElement>(".app-shell");
+    assert.ok(toggle);
+    assert.ok(appShell);
+    assert.equal(toggle.checked, false);
+    assert.equal(appShell.dataset.theme, "light");
+
+    await React.act(async () => toggle.click());
+    assert.equal(window.localStorage.getItem("time-tracker-dark-mode"), "true");
+    assert.equal(appShell.dataset.theme, "dark");
+    assert.equal(appShell.dataset.bsTheme, "dark");
+
+    await React.act(async () => root.unmount());
+    restoredRoot = createRoot(container);
+    await React.act(async () => restoredRoot?.render(React.createElement(App)));
+    const restoredToggle = container.querySelector<HTMLInputElement>("#dark-mode");
+    assert.ok(restoredToggle);
+    assert.equal(restoredToggle.checked, true);
+    assert.equal(container.querySelector(".app-shell")?.getAttribute("data-theme"), "dark");
+  } finally {
+    await React.act(async () => {
+      if (restoredRoot) {
+        restoredRoot.unmount();
+      } else {
+        root.unmount();
+      }
+    });
+    container.remove();
+    globalThis.fetch = originalFetch;
+    window.localStorage.clear();
   }
 });
 
